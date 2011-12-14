@@ -11,6 +11,7 @@ module LLVM.ExecutionEngine(
     runStaticDestructors,
 -}
     getPointerToFunction,
+    getPointerToFunctionFromStr,
     addFunctionValue,
     addGlobalMappings,
     getFreePointers, FreePointers,

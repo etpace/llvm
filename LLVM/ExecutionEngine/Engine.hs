@@ -8,7 +8,7 @@ module LLVM.ExecutionEngine.Engine(
        createExecutionEngine, addModuleProvider, addModule,
        {- runStaticConstructors, runStaticDestructors, -}
        getExecutionEngineTargetData,
-       getPointerToFunction,
+       getPointerToFunction, getPointerToFunctionFromStr,
        addFunctionValue, addGlobalMappings,
        getFreePointers, FreePointers,
        runFunction, getRunFunction,
@@ -24,7 +24,7 @@ import Foreign.Marshal.Alloc (alloca, free)
 import Foreign.Marshal.Array (withArrayLen)
 import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, withForeignPtr)
 import Foreign.Marshal.Utils (fromBool)
-import Foreign.C.String (peekCString)
+import Foreign.C.String (peekCString, newCString)
 import Foreign.Ptr (Ptr, FunPtr, castFunPtrToPtr)
 import LLVM.Core.CodeGen(Value(..), Function)
 import LLVM.Core.CodeGenMonad(GlobalMappings(..))
@@ -166,6 +166,20 @@ getPointerToFunction (Value f) = do
     eePtr <- gets ea_engine
     liftIO $ FFI.getPointerToGlobal eePtr f
 
+getPointerToFunctionFromStr :: String -> EngineAccess (Maybe (FunPtr f))
+getPointerToFunctionFromStr str = do
+    eePtr <- gets ea_engine
+    intoMaybe (liftIO . FFI.getPointerToGlobal eePtr) =<< liftIO (getValuePtr eePtr)
+    where
+        getValuePtr eePtr = alloca $ \valueRefPtr -> do
+            cStr <- newCString str
+            success <- FFI.findFunction eePtr cStr valueRefPtr
+            if success == 0 then return . Just =<< peek valueRefPtr
+                            else return Nothing
+
+        intoMaybe :: (Monad m) => (a -> m b) -> Maybe a -> m (Maybe b)
+        intoMaybe f (Just x) = return . Just =<< f x
+        intoMaybe f Nothing  = return Nothing
 {- |
 Tell LLVM the address of an external function
 if it cannot resolve a name automatically.
@@ -222,7 +236,7 @@ withAll :: [GenericValue] -> (Int -> Ptr FFI.GenericValueRef -> IO a) -> IO a
 withAll ps a = go [] ps
     where go ptrs (x:xs) = withGenericValue x $ \ptr -> go (ptr:ptrs) xs
           go ptrs _ = withArrayLen (reverse ptrs) a
-                   
+
 runFunction :: U.Function -> [GenericValue] -> EngineAccess GenericValue
 runFunction func args = do
     eePtr <- gets ea_engine
